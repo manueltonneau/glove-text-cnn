@@ -34,6 +34,9 @@ tf.flags.DEFINE_integer("num_checkpoints", 3, "Number of checkpoints to store (d
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+# Data paths
+tf.flags.DEFINE_string("data_path", "/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced", "path to train and val data")
+tf.flags.DEFINE_string("label", "is_unemployed", "Label to train on")
 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
@@ -45,8 +48,13 @@ print("")
 
 # Data Preparation
 print ("Loading Dataset ...")
-dataset = IMDBDataset('./data/aclImdb/train', './data/vocab.pckl')
-X, Y = dataset.load()
+
+data_path = FLAGS.data_path
+train_df = pd.read_csv(os.path.join(data_path, "train_{}.csv".format(FLAGS.label))
+eval_df = pd.read_csv(os.path.join(data_path, "val_{}.csv".format(FLAGS.label))
+                      
+#dataset = IMDBDataset('./data/aclImdb/train', './data/vocab.pckl')
+#X, Y = dataset.load()
 print ("Dataset loaded. Preparing data and loading embeddings ...")
 
 np.random.seed(10)
