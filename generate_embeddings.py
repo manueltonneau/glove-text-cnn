@@ -17,8 +17,8 @@ def parse_args():
     parser.add_argument('--dataset', '-d', type=str, required=True)
     parser.add_argument('--npy_output', type=str, required=True)
     parser.add_argument('--dict_output', type=str, required=True)
-    parser.add_argument('--dict_whitelist', type=str, required=True)
     parser.add_argument('--dump_frequency', type=int, default=10000)
+    parser.add_argument('--embedding_dim', type=int)
     return parser.parse_args()
 
 
@@ -30,13 +30,10 @@ def main():
         '': 0
     }
     embeddings = [
-        np.zeros((300), dtype=np.float32)
+        np.zeros((args.embedding_dim), dtype=np.float32)
     ]
 
     float_re = re.compile(' [-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')
-
-    with open(args.dict_whitelist) as wfile:
-        whitelist = [line.strip() for line in wfile]
 
     print("Building vocabulary ...")
 
@@ -48,16 +45,13 @@ def main():
             pos = next(re.finditer(float_re, line)).start()
             word, vector = line[:pos], line[pos+1:].split()
 
-            if word not in whitelist:
-                continue
-
             if word in data:
                 print('Possible duplicate at {} in {}'.format(idx, line))
                 continue
             
             embedding = np.fromiter([float(d) for d in vector], np.float32)
             
-            if embedding.shape != (300,):
+            if embedding.shape != (args.embedding_dim,):
                 print('Shape is {}'.format(embedding.shape))
                 print(line)
             embeddings.append(embedding)
