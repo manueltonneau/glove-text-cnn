@@ -105,6 +105,5 @@ class TextCNN(object):
         with tf.name_scope("auc"):
             true_labels = tf.argmax(tf.cast(self.input_y, tf.int64),1)
             predictions_proba = tf.nn.softmax(self.scores)
-            print("************************************Scores***********************************")
             auc_value, auc_op = tf.metrics.auc(predictions = predictions_proba[:, 1], labels=true_labels,curve='ROC')
             self.auc = tf.reduce_mean(auc_op, name="auc")

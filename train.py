@@ -4,6 +4,8 @@ import os
 import time
 import datetime
 import sys
+import shutil
+import glob
 
 import data_utils as utils
 import tensorflow as tf
@@ -47,6 +49,7 @@ tf.flags.DEFINE_string("label", "is_unemployed", "Label to train on")
 tf.flags.DEFINE_string("vocab_path",
                        "/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/vocab.pckl",
                        "Path pickle file")
+tf.flags.DEFINE_string("run_name", "default_run_name", "Name of folder in runs folder where models are saved")
 
 FLAGS = tf.flags.FLAGS
 FLAGS(sys.argv)
@@ -86,9 +89,9 @@ x_dev = pad_dataset(eval_df.text_tokenized.values.tolist(), 128)
 
 def create_label(label):
     if label == 1:
-        return [1, 0]
-    elif label == 0:
         return [0, 1]
+    elif label == 0:
+        return [1, 0]
 
 
 y_train = np.array((train_df['class'].apply(create_label)).values.tolist())
@@ -133,7 +136,7 @@ with tf.Graph().as_default():
 
         # Output directory for models and summaries
         timestamp = str(int(time.time()))
-        out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+        out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", FLAGS.run_name))
         print("Writing to {}\n".format(out_dir))
 
         # Summaries for loss, accuracy, precision
@@ -200,12 +203,14 @@ with tf.Graph().as_default():
             print("{}: step {}, loss {:g}, acc {:g}, precision {:g}, recall {:g}, auc {:g}".format(time_str, step, loss, accuracy, precision, recall, auc))
             if writer:
                 writer.add_summary(summaries, step)
+            return loss
 
 
         # Generate batches
         batches = utils.batch_iter(
             list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
         # Training loop. For each batch...
+        lowest_eval_loss = 1
         for batch in batches:
             x_batch, y_batch = zip(*batch)
             train_step(x_batch, y_batch)
@@ -213,7 +218,17 @@ with tf.Graph().as_default():
             if current_step % FLAGS.evaluate_every == 0:
                 print("\nEvaluation:")
                 dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                loss = dev_step(x_dev, y_dev, writer=dev_summary_writer)
                 print("")
-            if current_step % FLAGS.checkpoint_every == 0:
-                path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                print("Saved model checkpoint to {}\n".format(path))
+                if loss < lowest_eval_loss:
+                    lowest_eval_loss = loss
+                    checkpoint_folder = glob.glob(checkpoint_dir + '/*')
+                    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                    print("Saved best model checkpoint to {}\n".format(path))
+                    for f in checkpoint_folder:
+                        os.remove(f)
+                    print("Removed former best model: ", checkpoint_folder )
+
+            #if current_step % FLAGS.checkpoint_every == 0:
+            #    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+            #    print("Saved model checkpoint to {}\n".format(path))
