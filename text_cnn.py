@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import sys
 
 
 class TextCNN(object):
@@ -85,3 +86,25 @@ class TextCNN(object):
         with tf.name_scope("accuracy"):
             correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_y, 1))
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+
+        # Precision
+        with tf.name_scope("precision"):
+            true_labels = tf.argmax(tf.cast(self.input_y, tf.int64),1)
+            TP = tf.count_nonzero(self.predictions * true_labels)
+            FP = tf.count_nonzero(self.predictions * (true_labels - 1))
+            self.precision = tf.reduce_mean(TP / (TP + FP), name="precision")
+
+        # Recall
+        with tf.name_scope("recall"):
+            true_labels = tf.argmax(tf.cast(self.input_y, tf.int64),1)
+            TP = tf.count_nonzero(self.predictions * true_labels)
+            FN = tf.count_nonzero((self.predictions - 1) * true_labels)
+            self.recall = tf.reduce_mean(TP / (TP + FN), name="recall")
+
+        # AUC
+        with tf.name_scope("auc"):
+            true_labels = tf.argmax(tf.cast(self.input_y, tf.int64),1)
+            predictions_proba = tf.nn.softmax(self.scores)
+            print("************************************Scores***********************************")
+            auc_value, auc_op = tf.metrics.auc(predictions = predictions_proba[:, 1], labels=true_labels,curve='ROC')
+            self.auc = tf.reduce_mean(auc_op, name="auc")

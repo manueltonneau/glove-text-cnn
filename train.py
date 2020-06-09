@@ -3,14 +3,16 @@
 import os
 import time
 import datetime
+import sys
 
 import data_utils as utils
 import tensorflow as tf
 import numpy as np
+import pandas as pd
+import pickle
 
 from data_utils import IMDBDataset
 from text_cnn import TextCNN
-
 
 # Parameters
 # ==================================================
@@ -19,7 +21,7 @@ from text_cnn import TextCNN
 tf.flags.DEFINE_float("dev_sample_percentage", .2, "Percentage of the training data to use for validation")
 
 # Model Hyperparameters
-tf.flags.DEFINE_integer("embedding_dim", 300, "Dimensionality of character embedding (300 for this example)")
+tf.flags.DEFINE_integer("embedding_dim", 200, "Dimensionality of character embedding (300 for this example)")
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
@@ -34,54 +36,74 @@ tf.flags.DEFINE_integer("num_checkpoints", 3, "Number of checkpoints to store (d
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
-# Data paths
-tf.flags.DEFINE_string("data_path", "/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced", "path to train and val data")
+# Specifics
+tf.flags.DEFINE_string("data_path",
+                       "/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced",
+                       "path to train and val data")
+tf.flags.DEFINE_string("embeddings_path",
+                       "/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/embeddings.npy",
+                       "path to embeddings npy file")
 tf.flags.DEFINE_string("label", "is_unemployed", "Label to train on")
+tf.flags.DEFINE_string("vocab_path",
+                       "/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/vocab.pckl",
+                       "Path pickle file")
 
 FLAGS = tf.flags.FLAGS
-FLAGS._parse_flags()
+FLAGS(sys.argv)
 print("\nParameters:")
 for attr, value in sorted(FLAGS.__flags.items()):
     print("{}={}".format(attr.upper(), value))
 print("")
 
-
 # Data Preparation
-print ("Loading Dataset ...")
+print("Loading Dataset ...")
 
 data_path = FLAGS.data_path
-train_df = pd.read_csv(os.path.join(data_path, "train_{}.csv".format(FLAGS.label))
-eval_df = pd.read_csv(os.path.join(data_path, "val_{}.csv".format(FLAGS.label))
-                      
-#dataset = IMDBDataset('./data/aclImdb/train', './data/vocab.pckl')
-#X, Y = dataset.load()
-print ("Dataset loaded. Preparing data and loading embeddings ...")
+train_df = pd.read_csv(os.path.join(data_path, "train_{}.csv".format(FLAGS.label)))
+eval_df = pd.read_csv(os.path.join(data_path, "val_{}.csv".format(FLAGS.label)))
 
-np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(Y)))
 
-x_shuff = X[shuffle_indices]
-y_shuff = Y[shuffle_indices]
+def tokenizer(text):
+    return [wdict.get(w.lower(), 0) for w in text.split(' ')]
 
-# Percentage of the training data to use for validation
-dev_sample_index = -1 * int(FLAGS.dev_sample_percentage * float(len(Y)))
 
-# Split train/test set
-idx = -1 * int(FLAGS.dev_sample_percentage * float(len(Y)))
-x_train, x_dev = x_shuff[:idx], x_shuff[idx:]
-y_train, y_dev = y_shuff[:idx], y_shuff[idx:]
-# print("Train/Val split: {:d}/{:d}".format(len(y_train), len(y_val)))
+with open(FLAGS.vocab_path, 'rb') as dfile:
+    wdict = pickle.load(dfile)
 
-vocab_size = 75099
-embedding_path = './data/embeddings.npy'
+train_df['text_tokenized'] = train_df['text'].apply(tokenizer)
+eval_df['text_tokenized'] = eval_df['text'].apply(tokenizer)
+
+
+def pad_dataset(dataset, maxlen):
+    return np.array(
+        [np.pad(r, (0, maxlen - len(r)), mode='constant') if len(r) < maxlen else np.array(r[:maxlen])
+         for r in dataset])
+
+
+x_train = pad_dataset(train_df.text_tokenized.values.tolist(), 128)
+x_dev = pad_dataset(eval_df.text_tokenized.values.tolist(), 128)
+
+
+def create_label(label):
+    if label == 1:
+        return [1, 0]
+    elif label == 0:
+        return [0, 1]
+
+
+y_train = np.array((train_df['class'].apply(create_label)).values.tolist())
+y_dev = np.array((eval_df['class'].apply(create_label)).values.tolist())
+
+vocab_size = len(wdict)
+embedding_path = FLAGS.embeddings_path
 embedding = utils.load_embeddings(embedding_path, vocab_size, FLAGS.embedding_dim)
-print ("Embeddings loaded, Vocabulary Size: {:d}. Starting training ...".format(vocab_size))
+print("Embeddings loaded, Vocabulary Size: {:d}. Starting training ...".format(vocab_size))
 
 # Training
 with tf.Graph().as_default():
     session_conf = tf.ConfigProto(
-      allow_soft_placement=FLAGS.allow_soft_placement,
-      log_device_placement=FLAGS.log_device_placement)
+        allow_soft_placement=FLAGS.allow_soft_placement,
+        log_device_placement=FLAGS.log_device_placement)
     sess = tf.Session(config=session_conf)
     with sess.as_default():
         cnn = TextCNN(
@@ -114,17 +136,20 @@ with tf.Graph().as_default():
         out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
         print("Writing to {}\n".format(out_dir))
 
-        # Summaries for loss and accuracy
+        # Summaries for loss, accuracy, precision
         loss_summary = tf.summary.scalar("loss", cnn.loss)
         acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
+        precision_summary = tf.summary.scalar("precision", cnn.precision)
+        recall_summary = tf.summary.scalar("recall", cnn.recall)
+        auc_summary = tf.summary.scalar("recall", cnn.auc)
 
         # Train Summaries
-        train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+        train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged, precision_summary, recall_summary, auc_summary])
         train_summary_dir = os.path.join(out_dir, "summaries", "train")
         train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
 
         # Dev summaries
-        dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
+        dev_summary_op = tf.summary.merge([loss_summary, acc_summary, precision_summary, recall_summary, auc_summary])
         dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
         dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
 
@@ -140,41 +165,42 @@ with tf.Graph().as_default():
 
         # Initialize all variables
         sess.run(tf.global_variables_initializer())
-
+        sess.run(tf.local_variables_initializer())
         sess.run(cnn.embedding_init, feed_dict={cnn.embedding_placeholder: embedding})
+
 
         def train_step(x_batch, y_batch):
             """
             A single training step
             """
             feed_dict = {
-              cnn.input_x: x_batch,
-              cnn.input_y: y_batch,
-              cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
+                cnn.input_x: x_batch,
+                cnn.input_y: y_batch,
+                cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
             }
-            _, step, summaries, loss, accuracy = sess.run(
-                [train_op, global_step, train_summary_op, cnn.loss, cnn.accuracy],
-                feed_dict)
+            _, step, summaries, loss, accuracy, precision, recall, auc = sess.run(
+                [train_op, global_step, train_summary_op, cnn.loss, cnn.accuracy, cnn.precision, cnn.recall, cnn.auc], feed_dict)
             time_str = datetime.datetime.now().isoformat()
-            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+            print("{}: step {}, loss {:g}, acc {:g}, precision {:g}, recall {:g}, auc {:g}".format(time_str, step, loss, accuracy, precision, recall, auc))
             train_summary_writer.add_summary(summaries, step)
+
 
         def dev_step(x_batch, y_batch, writer=None):
             """
             Evaluates model on a dev set
             """
             feed_dict = {
-              cnn.input_x: x_batch,
-              cnn.input_y: y_batch,
-              cnn.dropout_keep_prob: 1.0
+                cnn.input_x: x_batch,
+                cnn.input_y: y_batch,
+                cnn.dropout_keep_prob: 1.0
             }
-            step, summaries, loss, accuracy = sess.run(
-                [global_step, dev_summary_op, cnn.loss, cnn.accuracy],
-                feed_dict)
+            step, summaries, loss, accuracy, precision, recall, auc = sess.run(
+                [global_step, dev_summary_op, cnn.loss, cnn.accuracy, cnn.precision, cnn.recall, cnn.auc], feed_dict)
             time_str = datetime.datetime.now().isoformat()
-            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+            print("{}: step {}, loss {:g}, acc {:g}, precision {:g}, recall {:g}, auc {:g}".format(time_str, step, loss, accuracy, precision, recall, auc))
             if writer:
                 writer.add_summary(summaries, step)
+
 
         # Generate batches
         batches = utils.batch_iter(
