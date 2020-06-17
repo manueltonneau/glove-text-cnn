@@ -144,7 +144,7 @@ with tf.Graph().as_default():
         acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
         precision_summary = tf.summary.scalar("precision", cnn.precision)
         recall_summary = tf.summary.scalar("recall", cnn.recall)
-        auc_summary = tf.summary.scalar("recall", cnn.auc)
+        auc_summary = tf.summary.scalar("auc", cnn.auc)
 
         # Train Summaries
         train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged, precision_summary, recall_summary, auc_summary])
@@ -226,8 +226,10 @@ with tf.Graph().as_default():
                     path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                     print("Saved best model checkpoint to {}\n".format(path))
                     for f in checkpoint_folder:
-                        os.remove(f)
-                    print("Removed former best model: ", checkpoint_folder )
+                        head, tail = os.path.split(f)
+                        if tail != 'checkpoint':
+                            os.remove(f)
+                    print("Removed former best model")
 
             #if current_step % FLAGS.checkpoint_every == 0:
             #    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
