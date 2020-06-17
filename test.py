@@ -62,7 +62,7 @@ allow_soft_placement = True
 log_device_placement = False
 
 print ("Loading test data ...")
-eval_df = pd.read_csv(os.path.join(args.eval_data_path))
+eval_df = pd.read_csv(args.eval_data_path, lineterminator='\n')
 
 
 with open(args.vocab_path, 'rb') as dfile:
@@ -96,19 +96,18 @@ with graph.as_default():
         # Tensors we want to evaluate
         predictions = graph.get_operation_by_name("output/predictions").outputs[0]
         predictions_proba = graph.get_operation_by_name("output/predictions_proba").outputs[0]
-        predictions_proba = predictions_proba[:, 1]
+        #predictions_proba = predictions_proba[:, 1]
         # Generate batches for one epoch
         batches = utils.batch_iter(list(x_test), batch_size, 1, shuffle=False)
 
         # Collect the predictions here
         all_predictions = []
-        all_scores = []
+        all_predictions_proba = []
         for x_test_batch in batches:
             batch_predictions = sess.run(predictions, {input_x: x_test_batch, dropout_keep_prob: 1.0})
-            batch_predictions_proba = sess.run(scores, {input_x: x_test_batch, dropout_keep_prob: 1.0})
-            print("Batch predictions: ", batch_predictions)
+            batch_predictions_proba = sess.run(predictions_proba, {input_x: x_test_batch, dropout_keep_prob: 1.0})
             all_predictions = np.concatenate([all_predictions, batch_predictions])
-            all_predictions_proba = np.concatenate([all_predictions_proba, batch_predictions_proba])
+            all_predictions_proba = np.concatenate([all_predictions_proba, batch_predictions_proba[:, 1]])
 
 
 
