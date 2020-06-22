@@ -13,6 +13,9 @@ from data_utils import IMDBDataset
 import argparse
 import pandas as pd
 import pickle
+from ekphrasis.classes.preprocessor import TextPreProcessor
+from ekphrasis.classes.tokenizer import SocialTokenizer
+from ekphrasis.dicts.emoticons import emoticons
 
 def get_args_from_command_line():
     """Parse the command line arguments."""
@@ -23,6 +26,7 @@ def get_args_from_command_line():
     parser.add_argument("--eval_data_path", type=str, help="Path to the evaluation data. Must be in csv format.", default="/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced")
     parser.add_argument("--vocab_path", type=str, help="Path pickle file.", default="/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/vocab.pckl")
     parser.add_argument("--label", default='is_unemployed', type=str)
+    parser.add_argument("--preprocessing", default=False, type=bool)
 
     args = parser.parse_args()
     return args
@@ -64,7 +68,43 @@ log_device_placement = False
 print ("Loading test data ...")
 eval_df = pd.read_csv(args.eval_data_path, lineterminator='\n')
 
+#Preprocessing
+text_processor = TextPreProcessor(
+    # terms that will be normalized
+    normalize=['url', 'email', 'percent', 'money', 'phone', 'user',
+               'time', 'url', 'date', 'number'],
+    # terms that will be annotated
+    annotate={"hashtag", "allcaps", "elongated", "repeated",
+              'emphasis', 'censored'},
+    fix_html=True,  # fix HTML tokens
 
+    # corpus from which the word statistics are going to be used
+    # for word segmentation
+    segmenter="twitter",
+
+    # corpus from which the word statistics are going to be used
+    # for spell correction
+    corrector="twitter",
+
+    unpack_hashtags=True,  # perform word segmentation on hashtags
+    unpack_contractions=True,  # Unpack contractions (can't -> can not)
+    spell_correct_elong=False,  # spell correction for elongated words
+
+    # select a tokenizer. You can use SocialTokenizer, or pass your own
+    # the tokenizer, should take as input a string and return a list of tokens
+    tokenizer=SocialTokenizer(lowercase=True).tokenize,
+
+    # list of dictionaries, for replacing tokens extracted from the text,
+    # with other expressions. You can pass more than one dictionaries.
+    dicts=[emoticons]
+)
+
+def ekphrasis_preprocessing(tweet):
+    return " ".join(text_processor.pre_process_doc(tweet))
+
+if args.preprocessing:
+    eval_df['text'] = eval_df['text'].apply(ekphrasis_preprocessing)
+    print("*********Text has been preprocessed*********")
 with open(args.vocab_path, 'rb') as dfile:
     wdict = pickle.load(dfile)
 

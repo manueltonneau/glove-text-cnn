@@ -12,6 +12,9 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import pickle
+from ekphrasis.classes.preprocessor import TextPreProcessor
+from ekphrasis.classes.tokenizer import SocialTokenizer
+from ekphrasis.dicts.emoticons import emoticons
 
 from data_utils import IMDBDataset
 from text_cnn import TextCNN
@@ -38,6 +41,7 @@ tf.flags.DEFINE_integer("num_checkpoints", 3, "Number of checkpoints to store (d
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+tf.flags.DEFINE_boolean("preprocessing", False, "Whether to preprocess tweets or not")
 # Specifics
 tf.flags.DEFINE_string("data_path",
                        "/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced",
@@ -62,8 +66,9 @@ print("")
 print("Loading Dataset ...")
 
 data_path = FLAGS.data_path
-train_df = pd.read_csv(os.path.join(data_path, "train_{}.csv".format(FLAGS.label)))
-eval_df = pd.read_csv(os.path.join(data_path, "val_{}.csv".format(FLAGS.label)))
+train_df = pd.read_csv(os.path.join(data_path, "train_{}.csv".format(FLAGS.label)), lineterminator = '\n')
+eval_df = pd.read_csv(os.path.join(data_path, "val_{}.csv".format(FLAGS.label)), lineterminator= '\n')
+
 
 
 def tokenizer(text):
@@ -72,6 +77,45 @@ def tokenizer(text):
 
 with open(FLAGS.vocab_path, 'rb') as dfile:
     wdict = pickle.load(dfile)
+
+text_processor = TextPreProcessor(
+    # terms that will be normalized
+    normalize=['url', 'email', 'percent', 'money', 'phone', 'user',
+               'time', 'url', 'date', 'number'],
+    # terms that will be annotated
+    annotate={"hashtag", "allcaps", "elongated", "repeated",
+              'emphasis', 'censored'},
+    fix_html=True,  # fix HTML tokens
+
+    # corpus from which the word statistics are going to be used
+    # for word segmentation
+    segmenter="twitter",
+
+    # corpus from which the word statistics are going to be used
+    # for spell correction
+    corrector="twitter",
+
+    unpack_hashtags=True,  # perform word segmentation on hashtags
+    unpack_contractions=True,  # Unpack contractions (can't -> can not)
+    spell_correct_elong=False,  # spell correction for elongated words
+
+    # select a tokenizer. You can use SocialTokenizer, or pass your own
+    # the tokenizer, should take as input a string and return a list of tokens
+    tokenizer=SocialTokenizer(lowercase=True).tokenize,
+
+    # list of dictionaries, for replacing tokens extracted from the text,
+    # with other expressions. You can pass more than one dictionaries.
+    dicts=[emoticons]
+)
+
+def ekphrasis_preprocessing(tweet):
+    return " ".join(text_processor.pre_process_doc(tweet))
+
+if FLAGS.preprocessing:
+    train_df['text'] = train_df['text'].apply(ekphrasis_preprocessing)
+    eval_df['text'] = eval_df['text'].apply(ekphrasis_preprocessing)
+    print("***********Text was successfully preprocessed***********")
+
 
 train_df['text_tokenized'] = train_df['text'].apply(tokenizer)
 eval_df['text_tokenized'] = eval_df['text'].apply(tokenizer)
