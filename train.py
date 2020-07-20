@@ -54,6 +54,8 @@ tf.flags.DEFINE_string("vocab_path",
                        "/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/vocab.pckl",
                        "Path pickle file")
 tf.flags.DEFINE_string("run_name", "default_run_name", "Name of folder in runs folder where models are saved")
+tf.flags.DEFINE_string("output_dir", "", "Output directory where models are saved")
+
 
 FLAGS = tf.flags.FLAGS
 FLAGS(sys.argv)
@@ -80,7 +82,7 @@ with open(FLAGS.vocab_path, 'rb') as dfile:
 
 text_processor = TextPreProcessor(
     # terms that will be normalized
-    normalize=['url', 'email', 'percent', 'money', 'phone', 'user',
+    normalize=['url', 'email', 'le npercent', 'money', 'phone', 'user',
                'time', 'url', 'date', 'number'],
     # terms that will be annotated
     annotate={"hashtag", "allcaps", "elongated", "repeated",
@@ -146,6 +148,17 @@ embedding_path = FLAGS.embeddings_path
 embedding = utils.load_embeddings(embedding_path, vocab_size, FLAGS.embedding_dim)
 print("Embeddings loaded, Vocabulary Size: {:d}. Starting training ...".format(vocab_size))
 
+def prepare_filepath_for_storing_model(output_dir: str) -> str:
+    """Prepare the filepath where the trained model will be stored.
+
+    :param output_dir: Directory where to store outputs (trained models).
+    :return: path_to_store_model: Path where to store the trained model.
+    """
+    path_to_store_model = os.path.join(output_dir, 'models')
+    if not os.path.exists(path_to_store_model):
+        os.makedirs(path_to_store_model)
+    return path_to_store_model
+
 # Training
 with tf.Graph().as_default():
     session_conf = tf.ConfigProto(
@@ -180,7 +193,8 @@ with tf.Graph().as_default():
 
         # Output directory for models and summaries
         timestamp = str(int(time.time()))
-        out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", FLAGS.run_name))
+        out_dir = prepare_filepath_for_storing_model(output_dir=args.output_dir)
+        #out_dir = os.path.abspath(os.path.join(FLAGS.output_dir, FLAGS.run_name))
         print("Writing to {}\n".format(out_dir))
 
         # Summaries for loss, accuracy, precision

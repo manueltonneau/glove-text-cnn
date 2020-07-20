@@ -25,7 +25,6 @@ def get_args_from_command_line():
     parser.add_argument("--checkpoint_dir", type=str, help="Path to the models", default="/home/manuto/Documents/world_bank/bert_twitter_labor/code/glove-text-cnn/runs/default_run_name/checkpoints")
     parser.add_argument("--eval_data_path", type=str, help="Path to the evaluation data. Must be in csv format.", default="/home/manuto/Documents/world_bank/bert_twitter_labor/code/twitter/data/may20_9Klabels/data_binary_pos_neg_balanced")
     parser.add_argument("--vocab_path", type=str, help="Path pickle file.", default="/home/manuto/Documents/world_bank/bert_twitter_labor/data/glove_embeddings/vocab.pckl")
-    parser.add_argument("--label", default='is_unemployed', type=str)
     parser.add_argument("--preprocessing", default=False, type=bool)
 
     args = parser.parse_args()
@@ -68,6 +67,8 @@ log_device_placement = False
 print ("Loading test data ...")
 eval_df = pd.read_csv(args.eval_data_path, lineterminator='\n')
 
+with open(args.vocab_path, 'rb') as dfile:
+    wdict = pickle.load(dfile)
 #Preprocessing
 text_processor = TextPreProcessor(
     # terms that will be normalized
@@ -102,16 +103,17 @@ text_processor = TextPreProcessor(
 def ekphrasis_preprocessing(tweet):
     return " ".join(text_processor.pre_process_doc(tweet))
 
+
 if args.preprocessing:
-    eval_df['text'] = eval_df['text'].apply(ekphrasis_preprocessing)
+    eval_df['text_preprocessed'] = eval_df['text'].apply(ekphrasis_preprocessing)
     print("*********Text has been preprocessed*********")
-with open(args.vocab_path, 'rb') as dfile:
-    wdict = pickle.load(dfile)
+    eval_df = eval_df[eval_df['text_preprocessed'].apply(lambda x: isinstance(x, str))]
+    text_tokenized = eval_df['text_preprocessed'].apply(tokenizer)
+else:
+    eval_df = eval_df[eval_df['text'].apply(lambda x: isinstance(x, str))]
+    text_tokenized = eval_df['text'].apply(tokenizer)
 
-eval_df = eval_df[eval_df['text'].apply(lambda x: isinstance(x, str))]
-eval_df['text_tokenized'] = eval_df['text'].apply(tokenizer)
-
-x_test = pad_dataset(eval_df.text_tokenized.values.tolist(), 128)
+x_test = pad_dataset(text_tokenized.values.tolist(), 128)
 
 #y_test = np.array((eval_df['class'].apply(create_label)).values.tolist())
 
